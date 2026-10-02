@@ -1,0 +1,53 @@
+name: Validate README Markers
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate README activity markers
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import sys
+
+          readme = Path("README.md")
+
+          if not readme.exists():
+              print("ERROR: README.md does not exist.")
+              sys.exit(1)
+
+          content = readme.read_text(encoding="utf-8")
+
+          start_marker = "<!-- ACTIVITY_START -->"
+          end_marker = "<!-- ACTIVITY_END -->"
+
+          if start_marker not in content:
+              print("ERROR: ACTIVITY_START marker is missing.")
+              sys.exit(1)
+
+          if end_marker not in content:
+              print("ERROR: ACTIVITY_END marker is missing.")
+              sys.exit(1)
+
+          if content.index(start_marker) > content.index(end_marker):
+              print("ERROR: README activity markers are in the wrong order.")
+              sys.exit(1)
+
+          print("SUCCESS: README activity markers are valid.")
+          PY
