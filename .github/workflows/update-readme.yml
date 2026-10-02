@@ -1,0 +1,95 @@
+name: Update README Activity
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: Update README activity
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python <<'PY'
+          import os
+          import json
+          import urllib.request
+          from pathlib import Path
+
+          start_marker = "<!-- ACTIVITY_START -->"
+          end_marker = "<!-- ACTIVITY_END -->"
+
+          readme_path = Path("README.md")
+          content = readme_path.read_text(encoding="utf-8")
+
+          if start_marker not in content or end_marker not in content:
+              raise SystemExit("README activity markers are missing.")
+
+          repo = os.environ["REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/commits?per_page=5",
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+
+          with urllib.request.urlopen(request) as response:
+              commits = json.load(response)
+
+          activity_lines = []
+          for commit in commits:
+              message = commit["commit"]["message"].splitlines()[0]
+              sha = commit["sha"][:7]
+              url = commit["html_url"]
+              activity_lines.append(f"- [`{sha}`]({url}) {message}")
+
+          new_activity = "\n".join(activity_lines)
+          before, remainder = content.split(start_marker, 1)
+          _, after = remainder.split(end_marker, 1)
+
+          updated = (
+              before
+              + start_marker
+              + "\n\n"
+              + new_activity
+              + "\n\n"
+              + end_marker
+              + after
+          )
+
+          if updated != content:
+              readme_path.write_text(updated, encoding="utf-8")
+              print("README activity section updated.")
+          else:
+              print("README is already up to date.")
+          PY
+
+      - name: Commit and push README
+        run: |
+          if git diff --quiet README.md; then
+            echo "No README changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "chore: auto-update README activity"
+          git push
